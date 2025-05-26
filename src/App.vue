@@ -1,7 +1,13 @@
+//// App.vue /////
 <template>
   <div id="app">
     <h1>Vue3＋Vite Breakout Game</h1>
-    <GameCanvas />
+    <GameCanvas
+      ball-color="#FF0000"
+      paddle-color="#00FF00"
+      :brick-colors="['#F00', '#0F', '#00F', '#FF0']"
+      background-color="#000000"
+    />
   </div>
 </template>
 
