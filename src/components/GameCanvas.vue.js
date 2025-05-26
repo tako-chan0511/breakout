@@ -1,32 +1,37 @@
 //// GameCanvas.vue /////
-import { ref, onMounted, onUnmounted, defineProps } from 'vue';
-// Props for customization
+import { ref, watch, onMounted, onUnmounted, defineProps, getCurrentInstance } from 'vue';
+// Emit 型
+const emit = getCurrentInstance().emit;
+// Props
 const props = defineProps({
     ballColor: { type: String, default: '#0095DD' },
     paddleColor: { type: String, default: '#0095DD' },
     brickColors: { type: Array, default: () => ['#0095DD', '#DD9500', '#95DD00'] },
-    backgroundColor: { type: String, default: '#eee' }
+    backgroundColor: { type: String, default: '#000' },
+    paddleWidth: { type: Number, default: 75 },
+    enableMouse: { type: Boolean, default: false },
+    gameActive: { type: Boolean, default: false }
 });
-// Canvas dimensions
+// Canvas 設定
 const width = 480;
 const height = 320;
 const canvas = ref(null);
 let ctx;
-// Game state
-let ballX = width / 2;
-let ballY = height - 30;
+// ゲームステート
+let ballX = 0;
+let ballY = 0;
 const ballRadius = 10;
-let dx = 2;
-let dy = -2;
+let dx = 0;
+let dy = 0;
 const paddleHeight = 10;
-const paddleWidth = 75;
-let paddleX = (width - paddleWidth) / 2;
-// Touch state
-let lastTouchX = null;
-// Score & Level
+let paddleX = 0;
+let gameOver = false;
 const score = ref(0);
 const level = ref(1);
-// Block settings
+// キーボード状態
+const leftPressed = ref(false);
+const rightPressed = ref(false);
+// ブロック設定
 const brickRowCount = 3;
 const brickColumnCount = 5;
 const brickWidth = 75;
@@ -41,35 +46,74 @@ for (let c = 0; c < brickColumnCount; c++) {
         bricks[c][r] = { x: 0, y: 0, status: 1 };
     }
 }
-// Keyboard handlers (optional)
-function keyDownHandler(e) {
-    if (e.key === 'ArrowRight')
-        paddleX += 7;
-    if (e.key === 'ArrowLeft')
-        paddleX -= 7;
-    paddleX = Math.max(0, Math.min(paddleX, width - paddleWidth));
+// ゲーム初期化
+function initGame() {
+    ballX = width / 2;
+    ballY = height - paddleHeight - ballRadius;
+    dx = 2;
+    dy = -2;
+    paddleX = (width - props.paddleWidth) / 2;
+    gameOver = false;
+    score.value = 0;
+    level.value = 1;
+    bricks.forEach(col => col.forEach(b => (b.status = 1)));
 }
-// Touch handlers: start, move, end
+watch(() => props.gameActive, active => { if (active)
+    initGame(); });
+// キーボード操作
+function keyDownHandler(e) {
+    if (!props.gameActive || gameOver)
+        return;
+    if (e.key === 'ArrowLeft')
+        leftPressed.value = true;
+    if (e.key === 'ArrowRight')
+        rightPressed.value = true;
+}
+function keyUpHandler(e) {
+    if (e.key === 'ArrowLeft')
+        leftPressed.value = false;
+    if (e.key === 'ArrowRight')
+        rightPressed.value = false;
+}
+// タッチ操作
+let lastTouchX = null;
 function touchStartHandler(e) {
     lastTouchX = e.touches[0].clientX;
 }
 function touchMoveHandler(e) {
-    if (lastTouchX === null || !canvas.value)
+    if (!props.gameActive || gameOver || lastTouchX === null || !canvas.value)
         return;
-    const touchX = e.touches[0].clientX;
-    const deltaPx = touchX - lastTouchX;
-    const rect = canvas.value.getBoundingClientRect();
-    // ピクセル差をキャンバス座標に変換
-    const scale = width / rect.width;
-    paddleX += deltaPx * scale;
-    // 境界内に制限
-    paddleX = Math.max(0, Math.min(paddleX, width - paddleWidth));
-    lastTouchX = touchX;
+    const tx = e.touches[0].clientX;
+    const deltaPx = tx - lastTouchX;
+    const scale = width / canvas.value.getBoundingClientRect().width;
+    paddleX = Math.max(0, Math.min(paddleX + deltaPx * scale, width - props.paddleWidth));
+    lastTouchX = tx;
 }
 function touchEndHandler() {
     lastTouchX = null;
 }
-// Drawing utilities
+// マウス操作
+let isMouseDown = false;
+let lastMouseX = null;
+function mouseDownHandler(e) {
+    if (!props.enableMouse || !props.gameActive || gameOver)
+        return;
+    isMouseDown = true;
+    lastMouseX = e.clientX;
+}
+function mouseMoveHandler(e) {
+    if (!props.enableMouse || !isMouseDown || !canvas.value || !props.gameActive || gameOver)
+        return;
+    const deltaPx = e.clientX - (lastMouseX ?? e.clientX);
+    const scale = width / canvas.value.getBoundingClientRect().width;
+    paddleX = Math.max(0, Math.min(paddleX + deltaPx * scale, width - props.paddleWidth));
+    lastMouseX = e.clientX;
+}
+function mouseUpHandler() {
+    isMouseDown = false;
+    lastMouseX = null;
+}
+// 描画関数
 function clearBackground() {
     ctx.fillStyle = props.backgroundColor;
     ctx.fillRect(0, 0, width, height);
@@ -89,7 +133,7 @@ function drawBall() {
 }
 function drawPaddle() {
     ctx.beginPath();
-    ctx.rect(paddleX, height - paddleHeight, paddleWidth, paddleHeight);
+    ctx.rect(paddleX, height - paddleHeight, props.paddleWidth, paddleHeight);
     ctx.fillStyle = props.paddleColor;
     ctx.fill();
     ctx.closePath();
@@ -98,77 +142,80 @@ function drawBricks() {
     for (let c = 0; c < brickColumnCount; c++) {
         for (let r = 0; r < brickRowCount; r++) {
             const b = bricks[c][r];
-            if (b.status === 1) {
-                const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
-                const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
-                b.x = brickX;
-                b.y = brickY;
-                ctx.beginPath();
-                ctx.fillStyle = props.brickColors[r % props.brickColors.length];
-                ctx.rect(brickX, brickY, brickWidth, brickHeight);
-                ctx.fill();
-                ctx.closePath();
-            }
+            if (b.status !== 1)
+                continue;
+            const x = c * (brickWidth + brickPadding) + brickOffsetLeft;
+            const y = r * (brickHeight + brickPadding) + brickOffsetTop;
+            b.x = x;
+            b.y = y;
+            ctx.beginPath();
+            ctx.fillStyle = props.brickColors[r % props.brickColors.length];
+            ctx.rect(x, y, brickWidth, brickHeight);
+            ctx.fill();
+            ctx.closePath();
         }
     }
 }
 function collisionDetection() {
-    let remaining = 0;
-    for (let c = 0; c < brickColumnCount; c++) {
-        for (let r = 0; r < brickRowCount; r++) {
-            const b = bricks[c][r];
-            if (b.status === 1) {
-                remaining++;
-                if (ballX > b.x && ballX < b.x + brickWidth && ballY > b.y && ballY < b.y + brickHeight) {
-                    dy = -dy;
-                    b.status = 0;
-                    score.value += 10;
-                }
+    let rem = 0;
+    bricks.forEach(col => col.forEach(b => {
+        if (b.status === 1) {
+            rem++;
+            if (ballX > b.x && ballX < b.x + brickWidth && ballY > b.y && ballY < b.y + brickHeight) {
+                dy = -dy;
+                b.status = 0;
+                score.value += 10;
             }
         }
-    }
-    if (remaining === 0) {
+    }));
+    if (rem === 0) {
         level.value++;
         dx *= 1.2;
         dy *= 1.2;
-        for (let c = 0; c < brickColumnCount; c++)
-            for (let r = 0; r < brickRowCount; r++)
-                bricks[c][r].status = 1;
+        bricks.forEach(col => col.forEach(b => (b.status = 1)));
     }
 }
-function draw() {
+function drawLoop() {
     clearBackground();
     drawHUD();
     drawBricks();
-    drawBall();
     drawPaddle();
-    collisionDetection();
-    if (ballX + dx > width - ballRadius || ballX + dx < ballRadius)
-        dx = -dx;
-    if (ballY + dy < ballRadius)
-        dy = -dy;
-    else if (ballY + dy > height - ballRadius) {
-        if (ballX > paddleX && ballX < paddleX + paddleWidth)
+    drawBall();
+    if (props.gameActive && !gameOver) {
+        if (leftPressed.value)
+            paddleX = Math.max(0, paddleX - 7);
+        if (rightPressed.value)
+            paddleX = Math.min(width - props.paddleWidth, paddleX + 7);
+        collisionDetection();
+        if (ballX + dx > width - ballRadius || ballX + dx < ballRadius)
+            dx = -dx;
+        if (ballY + dy < ballRadius)
             dy = -dy;
-        else {
-            document.location.reload();
-            return;
+        else if (ballY + dy > height - ballRadius) {
+            if (ballX > paddleX && ballX < paddleX + props.paddleWidth) {
+                dy = -dy;
+            }
+            else {
+                gameOver = true;
+                emit('game-over', { level: level.value, score: score.value });
+            }
         }
+        ballX += dx;
+        ballY += dy;
     }
-    ballX += dx;
-    ballY += dy;
-    requestAnimationFrame(draw);
+    requestAnimationFrame(drawLoop);
 }
 onMounted(() => {
     if (!canvas.value)
         return;
     ctx = canvas.value.getContext('2d');
-    document.addEventListener('keydown', keyDownHandler);
-    document.addEventListener('keyup', () => { });
-    draw();
+    window.addEventListener('keydown', keyDownHandler);
+    window.addEventListener('keyup', keyUpHandler);
+    drawLoop();
 });
 onUnmounted(() => {
-    document.removeEventListener('keydown', keyDownHandler);
+    window.removeEventListener('keydown', keyDownHandler);
+    window.removeEventListener('keyup', keyUpHandler);
 });
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
@@ -177,10 +224,7 @@ let __VLS_directives;
 // CSS variable injection 
 // CSS variable injection end 
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ onTouchstart: (__VLS_ctx.touchStartHandler) },
-    ...{ onTouchmove: (__VLS_ctx.touchMoveHandler) },
-    ...{ onTouchend: (__VLS_ctx.touchEndHandler) },
-    ...{ class: "canvas-container" },
+    ...{ class: "canvas-wrapper" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.canvas, __VLS_intrinsicElements.canvas)({
     ref: "canvas",
@@ -189,8 +233,15 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.canvas, __VLS_intrinsicElement
     ...{ class: "game-canvas" },
 });
 /** @type {typeof __VLS_ctx.canvas} */ ;
-/** @type {__VLS_StyleScopedClasses['canvas-container']} */ ;
+__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+    ...{ onTouchstart: (__VLS_ctx.touchStartHandler) },
+    ...{ onTouchmove: (__VLS_ctx.touchMoveHandler) },
+    ...{ onTouchend: (__VLS_ctx.touchEndHandler) },
+    ...{ class: "swipe-area" },
+});
+/** @type {__VLS_StyleScopedClasses['canvas-wrapper']} */ ;
 /** @type {__VLS_StyleScopedClasses['game-canvas']} */ ;
+/** @type {__VLS_StyleScopedClasses['swipe-area']} */ ;
 var __VLS_dollars;
 const __VLS_self = (await import('vue')).defineComponent({
     setup() {
@@ -207,7 +258,10 @@ const __VLS_self = (await import('vue')).defineComponent({
         ballColor: { type: String, default: '#0095DD' },
         paddleColor: { type: String, default: '#0095DD' },
         brickColors: { type: Array, default: () => ['#0095DD', '#DD9500', '#95DD00'] },
-        backgroundColor: { type: String, default: '#eee' }
+        backgroundColor: { type: String, default: '#000' },
+        paddleWidth: { type: Number, default: 75 },
+        enableMouse: { type: Boolean, default: false },
+        gameActive: { type: Boolean, default: false }
     },
 });
 export default (await import('vue')).defineComponent({
@@ -218,7 +272,10 @@ export default (await import('vue')).defineComponent({
         ballColor: { type: String, default: '#0095DD' },
         paddleColor: { type: String, default: '#0095DD' },
         brickColors: { type: Array, default: () => ['#0095DD', '#DD9500', '#95DD00'] },
-        backgroundColor: { type: String, default: '#eee' }
+        backgroundColor: { type: String, default: '#000' },
+        paddleWidth: { type: Number, default: 75 },
+        enableMouse: { type: Boolean, default: false },
+        gameActive: { type: Boolean, default: false }
     },
 });
 ; /* PartiallyEnd: #4569/main.vue */
