@@ -24,6 +24,7 @@
 
     <!-- ゲーム画面 -->
     <GameCanvas
+      ref="gameCanvas"
       :ball-color="ballColor"
       :paddle-color="paddleColor"
       :brick-colors="brickColors"
@@ -33,14 +34,23 @@
       :game-active="started"
       @update:score="overScore = $event"
       @update:lives="overLives = $event"
+      @update:level="currentLevel = $event"
+      @lost-ball="onLostBall"
       @game-over="handleGameOver"
+    />
+
+    <!-- ボール喪失時モーダル -->
+    <GameOverModal
+      :show="lifeModalVisible"
+      :lives="overLives"
+      @restart="onRestartBall"
     />
 
     <!-- ゲームオーバーポップアップ -->
     <div class="popup" v-if="gameOverPopup">
       <div class="popup-content">
         <h2>ゲームオーバー</h2>
-        <p>残ボール数: {{ overLives }}</p>
+        <p>レベル: {{ currentLevel }}</p>
         <p>得点: {{ overScore }}</p>
         <button @click="closePopup">OK</button>
       </div>
@@ -48,9 +58,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue';
 import GameCanvas from './components/GameCanvas.vue';
+import GameOverModal from './components/GameOverModal.vue';
 
 // 設定用
 const paddleWidth     = ref(75);
@@ -59,23 +70,41 @@ const paddleColor     = ref('#00FF00');
 const brickColors     = ref(['#F00', '#0F0', '#00F', '#FF0']);
 const backgroundColor = ref('#000000');
 
-// HUD 用
-const overScore     = ref(0);
-const overLives     = ref(0);
-const gameOverPopup = ref(false);
-const started       = ref(false);
+// ステート
+const overScore        = ref(0);
+const overLives        = ref(3);
+const currentLevel     = ref(1);
+const gameOverPopup    = ref(false);
+const lifeModalVisible = ref(false);
+const started          = ref(false);
+
+// 子コンポーネント参照
+const gameCanvas = ref<InstanceType<typeof GameCanvas> | null>(null);
 
 function startGame() {
-  overScore.value     = 0;
-  overLives.value     = 3;
-  gameOverPopup.value = false;
-  started.value       = true;
+  overScore.value        = 0;
+  overLives.value        = 3;
+  currentLevel.value     = 1;
+  gameOverPopup.value    = false;
+  lifeModalVisible.value = false;
+  started.value          = true;
 }
 
-function handleGameOver(payload) {
-  // payload: { score, lives }
+function onLostBall(lives: number) {
+  overLives.value        = lives;
+  lifeModalVisible.value = true;
+}
+
+function onRestartBall() {
+  lifeModalVisible.value = false;
+  // GameCanvas.vue の resetBall メソッド呼び出し
+  gameCanvas.value?.resetBall();
+}
+
+function handleGameOver(payload: { score: number; lives: number }) {
   overScore.value     = payload.score;
   overLives.value     = payload.lives;
+  currentLevel.value  = payload.lives; // 必要に応じて調整
   gameOverPopup.value = true;
   started.value       = false;
 }

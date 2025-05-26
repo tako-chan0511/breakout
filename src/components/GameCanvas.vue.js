@@ -1,5 +1,5 @@
-import { ref, watch, onMounted, onUnmounted, defineProps, getCurrentInstance } from 'vue';
-// Emit 型
+import { ref, watch, onMounted, onUnmounted, defineProps, getCurrentInstance, defineExpose } from 'vue';
+// Emit 型定義
 const emit = getCurrentInstance().emit;
 // Props
 const props = defineProps({
@@ -9,14 +9,14 @@ const props = defineProps({
     backgroundColor: { type: String, default: '#000' },
     paddleWidth: { type: Number, default: 75 },
     enableMouse: { type: Boolean, default: false },
-    gameActive: { type: Boolean, default: false }
+    gameActive: { type: Boolean, default: false },
 });
-// Canvas サイズ
+// Canvas 設定
 const width = 480;
 const height = 320;
 const canvas = ref(null);
 let ctx;
-// ステート
+// ゲームステート
 let ballX = 0;
 let ballY = 0;
 const ballRadius = 10;
@@ -25,10 +25,11 @@ let dy = 0;
 const paddleHeight = 10;
 let paddleX = 0;
 let lives = 3;
+let paused = false; // ボール喪失後の一時停止
 let gameOver = false;
 const score = ref(0);
 const level = ref(1);
-// ブロック
+// ブロック設定
 const brickRowCount = 3;
 const brickColumnCount = 5;
 const brickWidth = 75;
@@ -43,7 +44,7 @@ for (let c = 0; c < brickColumnCount; c++) {
         bricks[c][r] = { x: 0, y: 0, status: 1 };
     }
 }
-// 初期化
+// ゲーム初期化
 function initGame() {
     ballX = width / 2;
     ballY = height - paddleHeight - ballRadius;
@@ -54,17 +55,16 @@ function initGame() {
     score.value = 0;
     level.value = 1;
     gameOver = false;
-    bricks.forEach(col => col.forEach(b => b.status = 1));
+    paused = false;
+    bricks.forEach(col => col.forEach(b => (b.status = 1)));
 }
-watch(() => props.gameActive, active => {
-    if (active)
-        initGame();
-});
-// 入力
+watch(() => props.gameActive, active => { if (active)
+    initGame(); });
+// 入力処理
 const leftPressed = ref(false);
 const rightPressed = ref(false);
 function keyDownHandler(e) {
-    if (!props.gameActive || gameOver)
+    if (!props.gameActive || gameOver || paused)
         return;
     if (e.key === 'ArrowLeft')
         leftPressed.value = true;
@@ -77,12 +77,15 @@ function keyUpHandler(e) {
     if (e.key === 'ArrowRight')
         rightPressed.value = false;
 }
+// タッチ操作
 let lastTouchX = null;
 function touchStartHandler(e) {
+    if (!props.gameActive || gameOver || paused)
+        return;
     lastTouchX = e.touches[0].clientX;
 }
 function touchMoveHandler(e) {
-    if (!props.gameActive || gameOver || lastTouchX === null || !canvas.value)
+    if (!props.gameActive || gameOver || paused || lastTouchX === null || !canvas.value)
         return;
     const tx = e.touches[0].clientX;
     const delta = (tx - lastTouchX) * (width / canvas.value.getBoundingClientRect().width);
@@ -92,7 +95,7 @@ function touchMoveHandler(e) {
 function touchEndHandler() {
     lastTouchX = null;
 }
-// 描画
+// 描画関数
 function clearBackground() {
     ctx.fillStyle = props.backgroundColor;
     ctx.fillRect(0, 0, width, height);
@@ -156,7 +159,7 @@ function collisionDetection() {
         dx *= 1.2;
         dy *= 1.2;
         emit('update:level', level.value);
-        bricks.forEach(col => col.forEach(b => b.status = 1));
+        bricks.forEach(col => col.forEach(b => (b.status = 1)));
     }
 }
 function drawLoop() {
@@ -166,42 +169,33 @@ function drawLoop() {
     drawPaddle();
     drawBall();
     if (props.gameActive && !gameOver) {
-        if (leftPressed.value)
-            paddleX = Math.max(0, paddleX - 7);
-        if (rightPressed.value)
-            paddleX = Math.min(width - props.paddleWidth, paddleX + 7);
-        collisionDetection();
-        if (ballX + dx > width - ballRadius || ballX + dx < ballRadius)
-            dx = -dx;
-        if (ballY + dy < ballRadius)
-            dy = -dy;
-        else if (ballY + dy > height - ballRadius) {
-            if (ballX > paddleX && ballX < paddleX + props.paddleWidth) {
+        if (!paused) {
+            if (leftPressed.value)
+                paddleX = Math.max(0, paddleX - 7);
+            if (rightPressed.value)
+                paddleX = Math.min(width - props.paddleWidth, paddleX + 7);
+            collisionDetection();
+            if (ballX + dx > width - ballRadius || ballX + dx < ballRadius)
+                dx = -dx;
+            if (ballY + dy < ballRadius)
                 dy = -dy;
-            }
-            else {
-                lives--;
-                emit('update:lives', lives);
-                if (lives > 0) {
-                    if (window.confirm(`ボールを失いました。残り${lives}個。OKで再スタート`)) {
-                        ballX = width / 2;
-                        ballY = height - paddleHeight - ballRadius;
-                        dx = 2;
-                        dy = -2;
-                    }
-                    else {
-                        gameOver = true;
-                        emit('game-over', { score: score.value, lives: lives });
-                    }
-                }
+            else if (ballY + dy > height - ballRadius) {
+                if (ballX > paddleX && ballX < paddleX + props.paddleWidth)
+                    dy = -dy;
                 else {
-                    gameOver = true;
-                    emit('game-over', { score: score.value, lives: lives });
+                    lives--;
+                    emit('update:lives', lives);
+                    emit('lost-ball', lives);
+                    paused = true;
+                    if (lives === 0) {
+                        gameOver = true;
+                        emit('game-over', { score: score.value, lives });
+                    }
                 }
             }
+            ballX += dx;
+            ballY += dy;
         }
-        ballX += dx;
-        ballY += dy;
     }
     requestAnimationFrame(drawLoop);
 }
@@ -223,6 +217,16 @@ onUnmounted(() => {
     canvas.value?.removeEventListener('touchmove', touchMoveHandler);
     canvas.value?.removeEventListener('touchend', touchEndHandler);
 });
+// ボール再スタート用メソッドを公開
+function resetBall() {
+    ballX = width / 2;
+    ballY = height - paddleHeight - ballRadius;
+    dx = 2;
+    dy = -2;
+    paused = false;
+}
+const __VLS_exposed = { resetBall };
+defineExpose(__VLS_exposed);
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
@@ -267,12 +271,14 @@ const __VLS_self = (await import('vue')).defineComponent({
         backgroundColor: { type: String, default: '#000' },
         paddleWidth: { type: Number, default: 75 },
         enableMouse: { type: Boolean, default: false },
-        gameActive: { type: Boolean, default: false }
+        gameActive: { type: Boolean, default: false },
     },
 });
 export default (await import('vue')).defineComponent({
     setup() {
-        return {};
+        return {
+            ...__VLS_exposed,
+        };
     },
     props: {
         ballColor: { type: String, default: '#0095DD' },
@@ -281,7 +287,7 @@ export default (await import('vue')).defineComponent({
         backgroundColor: { type: String, default: '#000' },
         paddleWidth: { type: Number, default: 75 },
         enableMouse: { type: Boolean, default: false },
-        gameActive: { type: Boolean, default: false }
+        gameActive: { type: Boolean, default: false },
     },
 });
 ; /* PartiallyEnd: #4569/main.vue */
