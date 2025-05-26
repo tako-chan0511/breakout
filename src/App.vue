@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <!-- 短縮タイトル -->
-    <h1>Vue3版Breakout</h1>
+    <h1>Vue3版ブロック崩し</h1>
 
     <!-- 設定画面 -->
     <div class="settings" :class="{ disabled: started }">
