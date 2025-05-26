@@ -1,30 +1,31 @@
-//// App.vue /////
 import { ref } from 'vue';
 import GameCanvas from './components/GameCanvas.vue';
-// 設定用リアクティブ変数
+// 設定用
 const paddleWidth = ref(75);
 const ballColor = ref('#FF0000');
 const paddleColor = ref('#00FF00');
 const brickColors = ref(['#F00', '#0F0', '#00F', '#FF0']);
 const backgroundColor = ref('#000000');
-// ゲーム制御
-const started = ref(false);
-const gameOverPopup = ref(false);
-const overLevel = ref(1);
+// HUD 用
 const overScore = ref(0);
+const overLives = ref(0);
+const gameOverPopup = ref(false);
+const started = ref(false);
 function startGame() {
-    started.value = true;
+    overScore.value = 0;
+    overLives.value = 3;
     gameOverPopup.value = false;
+    started.value = true;
 }
 function handleGameOver(payload) {
-    overLevel.value = payload.level;
+    // payload: { score, lives }
     overScore.value = payload.score;
+    overLives.value = payload.lives;
     gameOverPopup.value = true;
+    started.value = false;
 }
-// ポップアップOKで終了状態へ
 function closePopup() {
     gameOverPopup.value = false;
-    started.value = false;
 }
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
@@ -65,6 +66,8 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElement
 /** @type {[typeof GameCanvas, ]} */ ;
 // @ts-ignore
 const __VLS_0 = __VLS_asFunctionalComponent(GameCanvas, new GameCanvas({
+    ...{ 'onUpdate:score': {} },
+    ...{ 'onUpdate:lives': {} },
     ...{ 'onGameOver': {} },
     ballColor: (__VLS_ctx.ballColor),
     paddleColor: (__VLS_ctx.paddleColor),
@@ -75,6 +78,8 @@ const __VLS_0 = __VLS_asFunctionalComponent(GameCanvas, new GameCanvas({
     gameActive: (__VLS_ctx.started),
 }));
 const __VLS_1 = __VLS_0({
+    ...{ 'onUpdate:score': {} },
+    ...{ 'onUpdate:lives': {} },
     ...{ 'onGameOver': {} },
     ballColor: (__VLS_ctx.ballColor),
     paddleColor: (__VLS_ctx.paddleColor),
@@ -88,6 +93,16 @@ let __VLS_3;
 let __VLS_4;
 let __VLS_5;
 const __VLS_6 = {
+    'onUpdate:score': (...[$event]) => {
+        __VLS_ctx.overScore = $event;
+    }
+};
+const __VLS_7 = {
+    'onUpdate:lives': (...[$event]) => {
+        __VLS_ctx.overLives = $event;
+    }
+};
+const __VLS_8 = {
     onGameOver: (__VLS_ctx.handleGameOver)
 };
 var __VLS_2;
@@ -100,7 +115,7 @@ if (__VLS_ctx.gameOverPopup) {
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
     __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
-    (__VLS_ctx.overLevel);
+    (__VLS_ctx.overLives);
     __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
     (__VLS_ctx.overScore);
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
@@ -121,10 +136,10 @@ const __VLS_self = (await import('vue')).defineComponent({
             paddleColor: paddleColor,
             brickColors: brickColors,
             backgroundColor: backgroundColor,
-            started: started,
-            gameOverPopup: gameOverPopup,
-            overLevel: overLevel,
             overScore: overScore,
+            overLives: overLives,
+            gameOverPopup: gameOverPopup,
+            started: started,
             startGame: startGame,
             handleGameOver: handleGameOver,
             closePopup: closePopup,

@@ -1,4 +1,3 @@
-//// GameCanvas.vue /////
 import { ref, watch, onMounted, onUnmounted, defineProps, getCurrentInstance } from 'vue';
 // Emit 型
 const emit = getCurrentInstance().emit;
@@ -12,12 +11,12 @@ const props = defineProps({
     enableMouse: { type: Boolean, default: false },
     gameActive: { type: Boolean, default: false }
 });
-// Canvas 設定
+// Canvas サイズ
 const width = 480;
 const height = 320;
 const canvas = ref(null);
 let ctx;
-// ゲームステート
+// ステート
 let ballX = 0;
 let ballY = 0;
 const ballRadius = 10;
@@ -25,13 +24,11 @@ let dx = 0;
 let dy = 0;
 const paddleHeight = 10;
 let paddleX = 0;
+let lives = 3;
 let gameOver = false;
 const score = ref(0);
 const level = ref(1);
-// キーボード状態
-const leftPressed = ref(false);
-const rightPressed = ref(false);
-// ブロック設定
+// ブロック
 const brickRowCount = 3;
 const brickColumnCount = 5;
 const brickWidth = 75;
@@ -46,21 +43,26 @@ for (let c = 0; c < brickColumnCount; c++) {
         bricks[c][r] = { x: 0, y: 0, status: 1 };
     }
 }
-// ゲーム初期化
+// 初期化
 function initGame() {
     ballX = width / 2;
     ballY = height - paddleHeight - ballRadius;
     dx = 2;
     dy = -2;
     paddleX = (width - props.paddleWidth) / 2;
-    gameOver = false;
+    lives = 3;
     score.value = 0;
     level.value = 1;
-    bricks.forEach(col => col.forEach(b => (b.status = 1)));
+    gameOver = false;
+    bricks.forEach(col => col.forEach(b => b.status = 1));
 }
-watch(() => props.gameActive, active => { if (active)
-    initGame(); });
-// キーボード操作
+watch(() => props.gameActive, active => {
+    if (active)
+        initGame();
+});
+// 入力
+const leftPressed = ref(false);
+const rightPressed = ref(false);
 function keyDownHandler(e) {
     if (!props.gameActive || gameOver)
         return;
@@ -75,7 +77,6 @@ function keyUpHandler(e) {
     if (e.key === 'ArrowRight')
         rightPressed.value = false;
 }
-// タッチ操作
 let lastTouchX = null;
 function touchStartHandler(e) {
     lastTouchX = e.touches[0].clientX;
@@ -84,36 +85,14 @@ function touchMoveHandler(e) {
     if (!props.gameActive || gameOver || lastTouchX === null || !canvas.value)
         return;
     const tx = e.touches[0].clientX;
-    const deltaPx = tx - lastTouchX;
-    const scale = width / canvas.value.getBoundingClientRect().width;
-    paddleX = Math.max(0, Math.min(paddleX + deltaPx * scale, width - props.paddleWidth));
+    const delta = (tx - lastTouchX) * (width / canvas.value.getBoundingClientRect().width);
+    paddleX = Math.max(0, Math.min(paddleX + delta, width - props.paddleWidth));
     lastTouchX = tx;
 }
 function touchEndHandler() {
     lastTouchX = null;
 }
-// マウス操作
-let isMouseDown = false;
-let lastMouseX = null;
-function mouseDownHandler(e) {
-    if (!props.enableMouse || !props.gameActive || gameOver)
-        return;
-    isMouseDown = true;
-    lastMouseX = e.clientX;
-}
-function mouseMoveHandler(e) {
-    if (!props.enableMouse || !isMouseDown || !canvas.value || !props.gameActive || gameOver)
-        return;
-    const deltaPx = e.clientX - (lastMouseX ?? e.clientX);
-    const scale = width / canvas.value.getBoundingClientRect().width;
-    paddleX = Math.max(0, Math.min(paddleX + deltaPx * scale, width - props.paddleWidth));
-    lastMouseX = e.clientX;
-}
-function mouseUpHandler() {
-    isMouseDown = false;
-    lastMouseX = null;
-}
-// 描画関数
+// 描画
 function clearBackground() {
     ctx.fillStyle = props.backgroundColor;
     ctx.fillRect(0, 0, width, height);
@@ -121,8 +100,12 @@ function clearBackground() {
 function drawHUD() {
     ctx.font = '16px Arial';
     ctx.fillStyle = props.ballColor;
-    ctx.fillText(`Score: ${score.value}`, 8, 20);
-    ctx.fillText(`Level: ${level.value}`, width - 70, 20);
+    ctx.fillText(`得点: ${score.value}`, 8, 20);
+    ctx.fillText(`レベル: ${level.value}`, width / 2 - 30, 20);
+    ctx.fillText(`残ボール: ${lives}`, width - 100, 20);
+    emit('update:score', score.value);
+    emit('update:lives', lives);
+    emit('update:level', level.value);
 }
 function drawBall() {
     ctx.beginPath();
@@ -172,7 +155,8 @@ function collisionDetection() {
         level.value++;
         dx *= 1.2;
         dy *= 1.2;
-        bricks.forEach(col => col.forEach(b => (b.status = 1)));
+        emit('update:level', level.value);
+        bricks.forEach(col => col.forEach(b => b.status = 1));
     }
 }
 function drawLoop() {
@@ -196,8 +180,24 @@ function drawLoop() {
                 dy = -dy;
             }
             else {
-                gameOver = true;
-                emit('game-over', { level: level.value, score: score.value });
+                lives--;
+                emit('update:lives', lives);
+                if (lives > 0) {
+                    if (window.confirm(`ボールを失いました。残り${lives}個。OKで再スタート`)) {
+                        ballX = width / 2;
+                        ballY = height - paddleHeight - ballRadius;
+                        dx = 2;
+                        dy = -2;
+                    }
+                    else {
+                        gameOver = true;
+                        emit('game-over', { score: score.value, lives: lives });
+                    }
+                }
+                else {
+                    gameOver = true;
+                    emit('game-over', { score: score.value, lives: lives });
+                }
             }
         }
         ballX += dx;
@@ -211,11 +211,17 @@ onMounted(() => {
     ctx = canvas.value.getContext('2d');
     window.addEventListener('keydown', keyDownHandler);
     window.addEventListener('keyup', keyUpHandler);
+    canvas.value.addEventListener('touchstart', touchStartHandler);
+    canvas.value.addEventListener('touchmove', touchMoveHandler);
+    canvas.value.addEventListener('touchend', touchEndHandler);
     drawLoop();
 });
 onUnmounted(() => {
     window.removeEventListener('keydown', keyDownHandler);
     window.removeEventListener('keyup', keyUpHandler);
+    canvas.value?.removeEventListener('touchstart', touchStartHandler);
+    canvas.value?.removeEventListener('touchmove', touchMoveHandler);
+    canvas.value?.removeEventListener('touchend', touchEndHandler);
 });
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};

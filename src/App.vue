@@ -1,4 +1,3 @@
-//// App.vue /////
 <template>
   <div id="app">
     <!-- 短縮タイトル -->
@@ -23,7 +22,7 @@
       </button>
     </div>
 
-    <!-- ゲーム画面 → 常に表示 -->
+    <!-- ゲーム画面 -->
     <GameCanvas
       :ball-color="ballColor"
       :paddle-color="paddleColor"
@@ -32,6 +31,8 @@
       :paddle-width="paddleWidth"
       :enable-mouse="true"
       :game-active="started"
+      @update:score="overScore = $event"
+      @update:lives="overLives = $event"
       @game-over="handleGameOver"
     />
 
@@ -39,7 +40,7 @@
     <div class="popup" v-if="gameOverPopup">
       <div class="popup-content">
         <h2>ゲームオーバー</h2>
-        <p>レベル: {{ overLevel }}</p>
+        <p>残ボール数: {{ overLives }}</p>
         <p>得点: {{ overScore }}</p>
         <button @click="closePopup">OK</button>
       </div>
@@ -51,51 +52,50 @@
 import { ref } from 'vue';
 import GameCanvas from './components/GameCanvas.vue';
 
-// 設定用リアクティブ変数
-const paddleWidth    = ref(75);
-const ballColor      = ref('#FF0000');
-const paddleColor    = ref('#00FF00');
-const brickColors    = ref(['#F00', '#0F0', '#00F', '#FF0']);
-const backgroundColor= ref('#000000');
+// 設定用
+const paddleWidth     = ref(75);
+const ballColor       = ref('#FF0000');
+const paddleColor     = ref('#00FF00');
+const brickColors     = ref(['#F00', '#0F0', '#00F', '#FF0']);
+const backgroundColor = ref('#000000');
 
-// ゲーム制御
-const started       = ref(false);
-const gameOverPopup= ref(false);
-const overLevel     = ref(1);
+// HUD 用
 const overScore     = ref(0);
+const overLives     = ref(0);
+const gameOverPopup = ref(false);
+const started       = ref(false);
 
 function startGame() {
-  started.value = true;
+  overScore.value     = 0;
+  overLives.value     = 3;
   gameOverPopup.value = false;
+  started.value       = true;
 }
 
 function handleGameOver(payload) {
-  overLevel.value = payload.level;
-  overScore.value = payload.score;
+  // payload: { score, lives }
+  overScore.value     = payload.score;
+  overLives.value     = payload.lives;
   gameOverPopup.value = true;
+  started.value       = false;
 }
 
-// ポップアップOKで終了状態へ
 function closePopup() {
   gameOverPopup.value = false;
-  started.value = false;
 }
 </script>
 
 <style>
-/* レイアウト調整 */
 #app {
   position: relative;
   text-align: center;
-  background: #000; /* モバイル含め背景を黒に固定 */
+  background: #000;
+  color: #fff;
   min-height: 100vh;
   margin: 0;
   padding: 1rem;
   box-sizing: border-box;
-  color: #fff; /* テキスト白 */
 }
-
-/* 設定エリア */
 .settings {
   display: flex;
   flex-wrap: wrap;
@@ -104,7 +104,6 @@ function closePopup() {
   gap: 0.5rem;
   margin-bottom: 1rem;
   background: #222;
-  color: #fff;
   padding: 0.5rem;
   border-radius: 8px;
 }
@@ -120,8 +119,6 @@ function closePopup() {
 .settings button {
   padding: 0.5rem 1rem;
 }
-
-/* ポップアップ */
 .popup {
   position: absolute;
   top: 0;
@@ -144,14 +141,7 @@ function closePopup() {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
   background: #fff;
-  border: none;
   color: #000;
-}
-
-/* モバイル専用調整: サイド余白 */
-@media (max-width: 600px) {
-  #app {
-    padding: 0.5rem;
-  }
+  border: none;
 }
 </style>
