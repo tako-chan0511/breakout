@@ -7,3 +7,6 @@ This template should help get you started developing with Vue 3 and TypeScript i
 
 Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
 >>>>>>> d9501eb (First Commit)
+
+## 🎮 操作方法
+詳細は [操作手順はこちら](docs/INSTRUCTIONS.md) をご覧ください。
