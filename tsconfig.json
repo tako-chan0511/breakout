@@ -1,35 +1,7 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "useDefineForClassFields": true,
-    "module": "esnext",
-    "moduleResolution": "node",
-    "strict": true,
-    "jsx": "preserve",
-    // "sourceMap": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "lib": ["esnext", "dom"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    },
-    "types": ["vite/client"],
-    // ここから追加 ↓↓↓
-    "rootDir": "src",       // ソースのルートを src に固定
-    "outDir": "dist",       // トランスパイル成果は dist 配下へ
-    "sourceMap": false      // （任意）JSソースマップが不要なら false に
-    // ここまで追加 ↑↑↑
-  },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "src/**/*.vue"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "src/**/*.js",
-    "src/**/*.js.map"
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
   ]
 }

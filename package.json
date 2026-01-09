@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
+    "@types/vue": "^1.0.31",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/tsconfig": "^0.7.0",
     "gh-pages": "^6.3.0",

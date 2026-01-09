@@ -22,9 +22,7 @@ import {
   watch,
   onMounted,
   onUnmounted,
-  defineProps,
-  getCurrentInstance,
-  defineExpose
+  getCurrentInstance
 } from 'vue';
 import type { PropType } from 'vue';
 
@@ -58,6 +56,8 @@ const ballRadius = 10;
 let dx = 0;
 let dy = 0;
 const paddleHeight = 10;
+// 最大速度（この値以上にはならない）
+const MAX_SPEED = 12;
 let paddleX = 0;
 let lives = 3;
 let paused = false; // ボール喪失後の一時停止
@@ -85,8 +85,8 @@ for (let c = 0; c < brickColumnCount; c++) {
 function initGame() {
   ballX = width / 2;
   ballY = height - paddleHeight - ballRadius;
-  dx = 2;
-  dy = -2;
+  dx = 4;
+  dy = -4;
   paddleX = (width - props.paddleWidth) / 2;
   lives = 3;
   score.value = 0;
@@ -175,25 +175,27 @@ function drawBricks() {
     }
   }
 }
-function collisionDetection() {
-  let rem = 0;
-  bricks.forEach(col => col.forEach(b => {
-    if (b.status === 1) {
-      rem++;
-      if (ballX > b.x && ballX < b.x + brickWidth && ballY > b.y && ballY < b.y + brickHeight) {
-        dy = -dy;
-        b.status = 0;
-        score.value += 10;
-      }
+// ボール円と矩形の衝突判定（改良版）
+function circleRectCollision(cx: number, cy: number, r: number, rx: number, ry: number, rw: number, rh: number): { collide: boolean; normal: { x: number; y: number } } {
+  // 矩形の最も近い点をボール中心から見つける
+  const closestX = Math.max(rx, Math.min(cx, rx + rw));
+  const closestY = Math.max(ry, Math.min(cy, ry + rh));
+  
+  // ボール中心から最も近い点までの距離
+  const distX = closestX - cx;
+  const distY = closestY - cy;
+  const distance = Math.sqrt(distX * distX + distY * distY);
+  
+  if (distance < r) {
+    // 衝突している。法線を計算
+    if (distance === 0) {
+      return { collide: true, normal: { x: 0, y: -1 } };
     }
-  }));
-  if (rem === 0) {
-    level.value++;
-    dx *= 1.2;
-    dy *= 1.2;
-    emit('update:level', level.value);
-    bricks.forEach(col => col.forEach(b => (b.status = 1)));
+    let normalX = distX / distance;
+    let normalY = distY / distance;
+    return { collide: true, normal: { x: normalX, y: normalY } };
   }
+  return { collide: false, normal: { x: 0, y: 0 } };
 }
 
 function drawLoop() {
@@ -206,24 +208,129 @@ function drawLoop() {
     if (!paused) {
       if (leftPressed.value)  paddleX = Math.max(0, paddleX - 7);
       if (rightPressed.value) paddleX = Math.min(width - props.paddleWidth, paddleX + 7);
-      collisionDetection();
-      if (ballX + dx > width - ballRadius || ballX + dx < ballRadius) dx = -dx;
-      if (ballY + dy < ballRadius) dy = -dy;
-      else if (ballY + dy > height - ballRadius) {
-        if (ballX > paddleX && ballX < paddleX + props.paddleWidth) dy = -dy;
-        else {
-          lives--;
-          emit('update:lives', lives);
-          emit('lost-ball', lives);
-          paused = true;
-          if (lives === 0) {
-            gameOver = true;
-            emit('game-over', { score: score.value, lives });
+      
+      // 高速移動時のすり抜け防止：マルチステップで衝突判定
+      const speed = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(1, Math.ceil(speed / ballRadius));
+      const stepDx = dx / steps;
+      const stepDy = dy / steps;
+      
+      for (let step = 0; step < steps; step++) {
+        // ボール位置を更新
+        ballX += stepDx;
+        ballY += stepDy;
+
+        let collided = false;
+
+        // 壁衝突（水平）
+        if (ballX - ballRadius < 0 || ballX + ballRadius > width) {
+          dx = -dx;
+          ballX = Math.max(ballRadius, Math.min(width - ballRadius, ballX));
+          collided = true;
+        }
+
+        // 壁衝突（垂直上部）
+        if (ballY - ballRadius < 0) {
+          dy = -dy;
+          ballY = ballRadius;
+          collided = true;
+        }
+
+        // ボール位置のブロック衝突判定
+        if (!collided) {
+          for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+              const b = bricks[c][r];
+              if (b.status === 1) {
+                const collision = circleRectCollision(ballX, ballY, ballRadius, b.x, b.y, brickWidth, brickHeight);
+                if (collision.collide) {
+                  const dotProduct = dx * collision.normal.x + dy * collision.normal.y;
+
+                  // 簡易的な貫通補正（法線方向へ押し戻す）
+                  const cx = b.x + brickWidth / 2;
+                  const cy = b.y + brickHeight / 2;
+                  const penetration = ballRadius - (Math.abs(collision.normal.x * (ballX - cx)) + Math.abs(collision.normal.y * (ballY - cy)));
+                  if (penetration > 0) {
+                    ballX -= collision.normal.x * penetration;
+                    ballY -= collision.normal.y * penetration;
+                  }
+
+                  dx -= 2 * dotProduct * collision.normal.x;
+                  dy -= 2 * dotProduct * collision.normal.y;
+                  b.status = 0;
+                  score.value += 10;
+
+                  // 縦方向の最小速度を保証
+                  const minVerticalSpeed = 1.5;
+                  if (Math.abs(dy) < minVerticalSpeed) {
+                    dy = dy < 0 ? -minVerticalSpeed : minVerticalSpeed;
+                  }
+
+                  collided = true;
+                  break;
+                }
+              }
+            }
+            if (collided) break;
           }
         }
+
+        // パドル衝突と底部判定
+        if (!collided && ballY + ballRadius > height - paddleHeight) {
+          if (ballX > paddleX && ballX < paddleX + props.paddleWidth) {
+            dy = -dy;
+            ballY = height - paddleHeight - ballRadius;
+            collided = true;
+          } else {
+            // 完全に画面外に出ている場合もカウント
+            lives--;
+            emit('update:lives', lives);
+            emit('lost-ball', lives);
+            paused = true;
+            if (lives === 0) {
+              gameOver = true;
+              emit('game-over', { score: score.value, lives });
+            }
+            // ボールが見えなくなるのを防ぐため位置補正
+            ballX = width / 2;
+            ballY = height - paddleHeight - ballRadius;
+            break;
+          }
+        }
+
+        // レベルアップ判定
+        let rem = 0;
+        for (let c = 0; c < brickColumnCount; c++) {
+          for (let r = 0; r < brickRowCount; r++) {
+            if (bricks[c][r].status === 1) rem++;
+          }
+        }
+        if (rem === 0) {
+          level.value++;
+          // レベル100以上では速度を増やさない
+          if (level.value <= 100) {
+            dx *= 1.1;
+            dy *= 1.1;
+            // 速度上限を適用
+            const s = Math.sqrt(dx * dx + dy * dy);
+            if (s > MAX_SPEED) {
+              const scale = MAX_SPEED / s;
+              dx *= scale;
+              dy *= scale;
+            }
+          }
+          emit('update:level', level.value);
+          for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+              bricks[c][r].status = 1;
+            }
+          }
+          break;
+        }
+
+        // 衝突が発生したら同フレームの残りステップは処理しない
+        if (collided) break;
       }
-      ballX += dx;
-      ballY += dy;
     }
   }
   requestAnimationFrame(drawLoop);
@@ -252,8 +359,8 @@ onUnmounted(() => {
 function resetBall() {
   ballX = width / 2;
   ballY = height - paddleHeight - ballRadius;
-  dx = 2;
-  dy = -2;
+  dx = 4;
+  dy = -4;
   paused = false;
 }
 defineExpose({ resetBall });
