@@ -9,8 +9,6 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue';
-
 const props = defineProps<{ show: boolean; lives: number }>();
 const emit = defineEmits(['restart']);
 
